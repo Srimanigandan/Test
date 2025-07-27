@@ -1,0 +1,270 @@
+plugins {
+    id 'c'
+    id 'application'
+}
+
+// Custom task to generate header files
+task generateHeaders {
+    group = 'automotive'
+    description = 'Generate C header files from templates'
+    
+    doLast {
+        logger.lifecycle("Starting header generation...")
+        
+        // Create generated headers directory
+        def generatedDir = file("$buildDir/generated/headers")
+        generatedDir.mkdirs()
+        
+        // Generate config.h
+        def configTemplate = file("src/main/templates/config.h.template")
+        def configHeader = file("$generatedDir/config.h")
+        
+        def configContent = configTemplate.text
+            .replace('{{BUILD_NUMBER}}', project.version)
+            .replace('{{TIMESTAMP}}', new Date().toString())
+            .replace('{{DEBUG_MODE}}', project.hasProperty('debug') ? '1' : '0')
+        
+        configHeader.text = configContent
+        logger.lifecycle("Generated config.h")
+        
+        // Generate version.h
+        def versionTemplate = file("src/main/templates/version.h.template")
+        def versionHeader = file("$generatedDir/version.h")
+        
+        def versionContent = versionTemplate.text
+            .replace('{{MAJOR_VERSION}}', '1')
+            .replace('{{MINOR_VERSION}}', '0')
+            .replace('{{PATCH_VERSION}}', '0')
+        
+        versionHeader.text = versionContent
+        logger.lifecycle("Generated version.h")
+        
+        // Log process details for MCP learning
+        def processLog = [
+            timestamp: new Date().toInstant().toString(),
+            task: 'generateHeaders',
+            status: 'SUCCESS',
+            inputs: [configTemplate.absolutePath, versionTemplate.absolutePath],
+            outputs: [configHeader.absolutePath, versionHeader.absolutePath],
+            duration: System.currentTimeMillis()
+        ]
+        
+        file("logs/build-process.json") << groovy.json.JsonBuilder(processLog).toPrettyString() + "\n"
+    }
+}
+
+// Custom task to compile C files
+task compileC(dependsOn: generateHeaders) {
+    group = 'automotive'
+    description = 'Compile C source files with custom automotive flags'
+    
+    doLast {
+        logger.lifecycle("Starting C compilation...")
+        
+        def sourceFiles = fileTree("src/main/c").include("**/*.c")
+        def generatedHeaders = file("$buildDir/generated/headers")
+        def outputDir = file("$buildDir/compiled")
+        outputDir.mkdirs()
+        
+        def compileErrors = []
+        def compileWarnings = []
+        
+        sourceFiles.each { sourceFile ->
+            try {
+                def objectFile = file("$outputDir/${sourceFile.name.replace('.c', '.o')}")
+                
+                // Simulate compilation with automotive-specific flags
+                def compileCmd = [
+                    'gcc',
+                    '-c',
+                    '-std=c99',
+                    '-Wall', '-Wextra', '-Werror',
+                    '-DAUTOMOTIVE_BUILD',
+                    '-I', generatedHeaders.absolutePath,
+                    '-o', objectFile.absolutePath,
+                    sourceFile.absolutePath
+                ]
+                
+                logger.lifecycle("Compiling: ${sourceFile.name}")
+                
+                def process = compileCmd.execute()
+                process.waitFor()
+                
+                if (process.exitValue() != 0) {
+                    def error = process.errorStream.text
+                    compileErrors.add([file: sourceFile.name, error: error])
+                    logger.error("Compilation failed for ${sourceFile.name}: $error")
+                } else {
+                    logger.lifecycle("Successfully compiled: ${sourceFile.name}")
+                }
+                
+            } catch (Exception e) {
+                compileErrors.add([file: sourceFile.name, error: e.message])
+                logger.error("Exception compiling ${sourceFile.name}: ${e.message}")
+            }
+        }
+        
+        // Log compilation results for MCP learning
+        def compileLog = [
+            timestamp: new Date().toInstant().toString(),
+            task: 'compileC',
+            status: compileErrors.isEmpty() ? 'SUCCESS' : 'FAILED',
+            sourceFiles: sourceFiles.collect { it.absolutePath },
+            outputDir: outputDir.absolutePath,
+            errors: compileErrors,
+            warnings: compileWarnings,
+            duration: System.currentTimeMillis()
+        ]
+        
+        file("logs/build-process.json") << groovy.json.JsonBuilder(compileLog).toPrettyString() + "\n"
+        
+        if (!compileErrors.isEmpty()) {
+            throw new GradleException("Compilation failed with ${compileErrors.size()} errors")
+        }
+    }
+}
+
+// Custom task for static analysis
+task staticAnalysis(dependsOn: compileC) {
+    group = 'automotive'
+    description = 'Perform static analysis on C code for automotive compliance'
+    
+    doLast {
+        logger.lifecycle("Starting static analysis...")
+        
+        def sourceFiles = fileTree("src/main/c").include("**/*.c")
+        def reportDir = file("reports")
+        reportDir.mkdirs()
+        
+        def analysisReport = file("reports/static-analysis-report.txt")
+        def analysisResults = []
+        
+        sourceFiles.each { sourceFile ->
+            logger.lifecycle("Analyzing: ${sourceFile.name}")
+            
+            def violations = []
+            def content = sourceFile.text
+            
+            // Custom automotive static analysis rules
+            
+            // Rule 1: Check for MISRA C compliance patterns
+            if (content.contains("goto")) {
+                violations.add("MISRA-C violation: goto statement found")
+            }
+            
+            // Rule 2: Check for proper header inclusion
+            if (!content.contains("#include \"config.h\"")) {
+                violations.add("Missing required config.h inclusion")
+            }
+            
+            // Rule 3: Check for automotive-specific patterns
+            if (!content.contains("AUTOMOTIVE_BUILD") && content.contains("main")) {
+                violations.add("Main function should check AUTOMOTIVE_BUILD flag")
+            }
+            
+            // Rule 4: Check for proper error handling
+            def functionMatches = content.findAll(/\w+\s*\([^)]*\)\s*\{/)
+            functionMatches.each { match ->
+                if (!content.contains("return") && match.contains("int")) {
+                    violations.add("Function ${match} missing return statement")
+                }
+            }
+            
+            analysisResults.add([
+                file: sourceFile.name,
+                violations: violations,
+                linesOfCode: content.split('\n').size(),
+                complexity: calculateComplexity(content)
+            ])
+        }
+        
+        // Generate report
+        def reportContent = new StringBuilder()
+        reportContent.append("AUTOMOTIVE STATIC ANALYSIS REPORT\n")
+        reportContent.append("Generated: ${new Date()}\n")
+        reportContent.append("=" * 50).append("\n\n")
+        
+        analysisResults.each { result ->
+            reportContent.append("File: ${result.file}\n")
+            reportContent.append("Lines of Code: ${result.linesOfCode}\n")
+            reportContent.append("Complexity: ${result.complexity}\n")
+            
+            if (result.violations.isEmpty()) {
+                reportContent.append("Status: PASSED\n")
+            } else {
+                reportContent.append("Status: FAILED\n")
+                reportContent.append("Violations:\n")
+                result.violations.each { violation ->
+                    reportContent.append("  - ${violation}\n")
+                }
+            }
+            reportContent.append("\n")
+        }
+        
+        analysisReport.text = reportContent.toString()
+        logger.lifecycle("Static analysis report generated: ${analysisReport.absolutePath}")
+        
+        // Log analysis results for MCP learning
+        def analysisLog = [
+            timestamp: new Date().toInstant().toString(),
+            task: 'staticAnalysis',
+            status: analysisResults.any { !it.violations.isEmpty() } ? 'WARNINGS' : 'SUCCESS',
+            analyzedFiles: analysisResults.collect { it.file },
+            totalViolations: analysisResults.sum { it.violations.size() },
+            reportLocation: analysisReport.absolutePath,
+            results: analysisResults,
+            duration: System.currentTimeMillis()
+        ]
+        
+        file("logs/build-process.json") << groovy.json.JsonBuilder(analysisLog).toPrettyString() + "\n"
+    }
+}
+
+// Helper function to calculate code complexity
+def calculateComplexity(String content) {
+    def complexity = 1 // Base complexity
+    
+    // Add complexity for control structures
+    complexity += content.findAll(/\bif\b/).size()
+    complexity += content.findAll(/\bwhile\b/).size()
+    complexity += content.findAll(/\bfor\b/).size()
+    complexity += content.findAll(/\bswitch\b/).size()
+    complexity += content.findAll(/\bcase\b/).size()
+    
+    return complexity
+}
+
+// Main build task
+task automotiveBuild {
+    group = 'automotive'
+    description = 'Complete automotive embedded build process'
+    dependsOn generateHeaders, compileC, staticAnalysis
+    
+    doLast {
+        logger.lifecycle("Automotive build completed successfully!")
+        
+        def buildSummary = [
+            timestamp: new Date().toInstant().toString(),
+            task: 'automotiveBuild',
+            status: 'SUCCESS',
+            completedTasks: ['generateHeaders', 'compileC', 'staticAnalysis'],
+            duration: System.currentTimeMillis()
+        ]
+        
+        file("logs/build-process.json") << groovy.json.JsonBuilder(buildSummary).toPrettyString() + "\n"
+    }
+}
+
+// Ensure logs directory exists
+task setupLogDir {
+    doLast {
+        file("logs").mkdirs()
+    }
+}
+
+// Make all tasks depend on log directory setup
+tasks.all { task ->
+    if (task.name != 'setupLogDir') {
+        task.dependsOn setupLogDir
+    }
+}
