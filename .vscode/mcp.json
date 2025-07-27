@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "gradle-automotive-build": {
+      "command": "python",
+      "args": ["mcp/gradle_mcp_server.py"],
+      "env": {
+        "PYTHONPATH": ".",
+        "PROJECT_ROOT": "."
+      }
+    }
+  }
+}

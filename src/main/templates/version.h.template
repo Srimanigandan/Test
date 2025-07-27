@@ -1,0 +1,21 @@
+#ifndef VERSION_H
+#define VERSION_H
+
+// Version Information for Automotive Embedded System
+
+#define VERSION_MAJOR {{MAJOR_VERSION}}
+#define VERSION_MINOR {{MINOR_VERSION}}
+#define VERSION_PATCH {{PATCH_VERSION}}
+
+#define VERSION_STRING "{{MAJOR_VERSION}}.{{MINOR_VERSION}}.{{PATCH_VERSION}}"
+
+// Automotive specific version information
+#define ECU_SOFTWARE_VERSION VERSION_STRING
+#define CALIBRATION_VERSION "CAL_1.0"
+#define BOOTLOADER_VERSION "BL_2.1"
+
+// Compliance versions
+#define ISO26262_COMPLIANCE "ASIL-D"
+#define AUTOSAR_VERSION "4.4.0"
+
+#endif // VERSION_H
